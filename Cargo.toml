@@ -1,0 +1,21 @@
+[package]
+name = "p2panda-ffi"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+name = "p2panda"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
+[dependencies]
+p2panda = { git = "https://github.com/p2panda/p2panda", rev = "1bc866d85c9bdcdab6162e0766ace664a9da4be7" }
+p2panda-core = { git = "https://github.com/p2panda/p2panda", rev = "1bc866d85c9bdcdab6162e0766ace664a9da4be7" }
+thiserror = "2.0.18"
+uniffi = { version = "0.31.1", features = ["cli", "tokio"] }
+
+[build-dependencies]
+uniffi = { version = "0.31.1", features = ["build"] }

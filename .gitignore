@@ -1,0 +1,6 @@
+/target
+
+# python
+.python-version
+/python/p2panda/*.so
+__pycache__

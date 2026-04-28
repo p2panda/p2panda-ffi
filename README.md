@@ -28,14 +28,13 @@
 3. The p2panda library is compiled as well and ready to be used for FFI into
    other languages (Python, Go, etc.). Follow the next steps below for
    generating FFI bindings for specific languages.
+4. Make sure the library is available by linking it into the right path:
+   `ln -s ./target/release/libp2panda.so ./python/p2panda` or similar.
 
 ### Python
 
 1. Run `cargo run --bin uniffi-bindgen generate ./target/release/libp2panda.so
    --language python --out-dir ./python/p2panda`.
-2. Make sure the library is available by linking it into the right path:
-   `ln -s ./target/release/libp2panda.so ./python/p2panda`.
-3. You can now run the example via `python example.py` in the `python` folder.
 
 ### Go
 
@@ -49,7 +48,5 @@
 1. Make sure you have
    [uniffi-bindgen-node-js](https://github.com/criccomini/uniffi-bindgen-node-js)
    installed in your Rust toolbelt.
-2. Run `uniffi-bindgen-node-js generate ./target/release/libp2panda.so --out-dir ./nodejs/p2panda`.
-3. Make sure the library is available by linking it into the right path
-   `ln -s ./target/release/libp2panda.so ./nodejs/p2panda`.
-4. Run `node example.js` in the `nodejs` folder.
+2. Run `uniffi-bindgen-node-js generate ./target/release/libp2panda.so
+   --out-dir ./nodejs/p2panda`.

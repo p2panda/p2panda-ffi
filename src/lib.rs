@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use thiserror::Error;
 
+// TODO: Couldn't find a good name for this yet, it's a WORD (32 bytes).
 /// Internally used type representing a (random) 32-byte string.
 struct ByteString(p2panda::node::Topic);
 
@@ -18,9 +19,8 @@ impl ByteString {
         Ok(Self(topic.into()))
     }
 
-    pub fn from_str(value: &str) -> Self {
-        let hash = p2panda_core::hash::Hash::new(value.as_bytes());
-        Self(hash.into())
+    pub fn from_hash(hash: Arc<Hash>) -> Self {
+        Self(hash.0.into())
     }
 
     pub fn from_hex(value: &str) -> Result<Self, ConversionError> {
@@ -68,6 +68,19 @@ impl From<p2panda_core::topic::TopicError> for ConversionError {
     }
 }
 
+impl From<p2panda_core::hash::HashError> for ConversionError {
+    fn from(err: p2panda_core::hash::HashError) -> Self {
+        match err {
+            p2panda_core::hash::HashError::InvalidLength(given, expected) => {
+                Self::InvalidLength(given, expected)
+            }
+            p2panda_core::hash::HashError::InvalidHexEncoding(inner) => {
+                Self::InvalidHexEncoding(inner.to_string())
+            }
+        }
+    }
+}
+
 #[derive(uniffi::Object)]
 pub struct NetworkId(ByteString);
 
@@ -84,8 +97,8 @@ impl NetworkId {
     }
 
     #[uniffi::constructor]
-    pub fn from_str(value: &str) -> Self {
-        Self(ByteString::from_str(value))
+    pub fn from_hash(hash: Arc<Hash>) -> Self {
+        Self(ByteString::from_hash(hash))
     }
 
     #[uniffi::constructor]
@@ -118,8 +131,8 @@ impl TopicId {
     }
 
     #[uniffi::constructor]
-    pub fn from_str(value: &str) -> Self {
-        Self(ByteString::from_str(value))
+    pub fn from_hash(hash: Arc<Hash>) -> Self {
+        Self(ByteString::from_hash(hash))
     }
 
     #[uniffi::constructor]
@@ -181,6 +194,25 @@ pub struct Hash(p2panda_core::Hash);
 
 #[uniffi::export]
 impl Hash {
+    #[uniffi::constructor]
+    pub fn digest(value: &[u8]) -> Self {
+        Self(p2panda_core::Hash::new(value))
+    }
+
+    #[uniffi::constructor]
+    pub fn from_bytes(value: &[u8]) -> Result<Self, ConversionError> {
+        Ok(Self(p2panda_core::Hash::try_from(value)?))
+    }
+
+    #[uniffi::constructor]
+    pub fn from_hex(value: &str) -> Result<Self, ConversionError> {
+        Ok(Self(p2panda_core::Hash::from_str(value)?))
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.0.as_bytes().to_vec()
+    }
+
     pub fn to_hex(&self) -> String {
         self.0.to_hex()
     }
@@ -200,6 +232,115 @@ impl Node {
     pub fn id(&self) -> PublicKey {
         PublicKey(self.0.id())
     }
+
+    pub async fn stream(&self, topic: Arc<TopicId>) -> Result<TopicStream, CreateStreamError> {
+        let (tx, rx) = self.0.stream::<Vec<u8>>(topic.0.0).await?;
+        Ok(TopicStream { tx, rx })
+    }
+
+    pub async fn ephemeral_stream(
+        &self,
+        topic: Arc<TopicId>,
+    ) -> Result<EphemeralStream, CreateStreamError> {
+        let (tx, rx) = self.0.ephemeral_stream::<Vec<u8>>(topic.0.0).await?;
+        Ok(EphemeralStream { tx, rx })
+    }
+}
+
+#[derive(Debug, Error, uniffi::Error)]
+#[uniffi(flat_error)]
+pub enum CreateStreamError {
+    #[error(transparent)]
+    CreateStream(#[from] p2panda::node::CreateStreamError),
+}
+
+#[derive(uniffi::Object)]
+pub struct TopicStream {
+    tx: p2panda::streams::StreamPublisher<Vec<u8>>,
+    rx: p2panda::streams::StreamSubscription<Vec<u8>>,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl TopicStream {
+    pub fn topic(&self) -> TopicId {
+        TopicId(ByteString(self.tx.topic()))
+    }
+
+    pub async fn publish(&self, message: Vec<u8>) -> Result<Hash, PublishError> {
+        let processing = self.tx.publish(message).await?;
+        let message_id = processing.hash();
+        let _ = processing.await;
+        Ok(Hash(message_id))
+    }
+
+    pub async fn prune(&self, message: Option<Vec<u8>>) -> Result<Hash, PublishError> {
+        let processing = self.tx.prune(message).await?;
+        let message_id = processing.hash();
+        let _ = processing.await;
+        Ok(Hash(message_id))
+    }
+
+    // TODO: Probably we'll pass in an on_message callback in the constructor instead when creating
+    // the stream.
+    #[allow(unused)]
+    pub async fn subscribe(&self, on_message: Arc<dyn OnMessage>) {
+        // TODO: This needs spawning a task where we call on_message whenever a message arrives on
+        // the subscriber stream. The subscriber itself is not clonable so probably we want to use
+        // a channel instead to ack as well.
+    }
+
+    pub async fn ack(&self, message_id: Arc<Hash>) -> Result<(), AckedError> {
+        self.rx.ack(message_id.0).await?;
+        Ok(())
+    }
+}
+
+#[uniffi::export(with_foreign)]
+pub trait OnMessage: Send + Sync {
+    // TODO: Correct message type with different events, etc.
+    fn on_message(&self, message: Vec<u8>);
+}
+
+// TODO: Not sure if this approach of dedicated error types makes sense, maybe one large error type
+// with all the variants is sufficient for most languages?
+#[derive(Debug, Error, uniffi::Error)]
+#[uniffi(flat_error)]
+pub enum PublishError {
+    #[error(transparent)]
+    PublishError(#[from] p2panda::streams::PublishError),
+}
+
+#[derive(Debug, Error, uniffi::Error)]
+#[uniffi(flat_error)]
+pub enum AckedError {
+    #[error(transparent)]
+    AckedError(#[from] p2panda::streams::AckedError),
+}
+
+#[allow(unused)]
+#[derive(uniffi::Object)]
+pub struct EphemeralStream {
+    tx: p2panda::streams::EphemeralStreamPublisher<Vec<u8>>,
+    rx: p2panda::streams::EphemeralStreamSubscription<Vec<u8>>,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl EphemeralStream {
+    pub fn topic(&self) -> TopicId {
+        TopicId(ByteString(self.tx.topic()))
+    }
+
+    pub async fn publish(&self, message: Vec<u8>) -> Result<(), EphemeralPublishError> {
+        self.tx.publish(message).await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error, uniffi::Error)]
+#[uniffi(flat_error)]
+pub enum EphemeralPublishError {
+    #[error(transparent)]
+    EphemeralPublish(#[from] p2panda::streams::EphemeralPublishError),
 }
 
 #[derive(uniffi::Object)]
@@ -242,6 +383,8 @@ impl NodeBuilder {
     pub fn network_id(&self, network_id: Arc<NetworkId>) -> Result<(), NodeBuilderError> {
         self.update(|builder| builder.network_id((&network_id.0).into()))
     }
+
+    // TODO: Add more builder methods.
 }
 
 #[uniffi::export(async_runtime = "tokio")]

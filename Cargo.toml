@@ -12,17 +12,11 @@ name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
 
 [dependencies]
-p2panda = { git = "https://github.com/p2panda/p2panda", rev = "41fa01ee2418dd6347c2f2dcaa5fb7d7ca30cfe5" }
-p2panda-core = { git = "https://github.com/p2panda/p2panda", rev = "41fa01ee2418dd6347c2f2dcaa5fb7d7ca30cfe5" }
+p2panda = { git = "https://github.com/p2panda/p2panda", rev = "533a77df6a964746db3477901faebb4fc4c54275" }
+p2panda-core = { git = "https://github.com/p2panda/p2panda", rev = "533a77df6a964746db3477901faebb4fc4c54275" }
 thiserror = "2.0.18"
 tokio = "1.52.1"
 uniffi = { version = "0.31.1", features = ["cli", "tokio"] }
-
-# TODO: Fix temporary dependency issue with iroh (or ed25519-dalek) where a
-# dependency was not correctly pinned:
-# https://github.com/n0-computer/iroh/issues/4192
-der = "=0.8.0-rc.10"
-pkcs8 = "=0.11.0-rc.10"
 
 [build-dependencies]
 uniffi = { version = "0.31.1", features = ["build"] }

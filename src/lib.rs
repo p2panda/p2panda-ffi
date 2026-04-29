@@ -81,6 +81,22 @@ impl From<p2panda_core::hash::HashError> for ConversionError {
     }
 }
 
+impl From<p2panda_core::identity::IdentityError> for ConversionError {
+    fn from(err: p2panda_core::identity::IdentityError) -> Self {
+        match err {
+            p2panda_core::identity::IdentityError::InvalidLength(given, expected) => {
+                Self::InvalidLength(given, expected)
+            }
+            p2panda_core::identity::IdentityError::InvalidHexEncoding(inner) => {
+                Self::InvalidHexEncoding(inner.to_string())
+            }
+            p2panda_core::IdentityError::InvalidSignature(_) => {
+                unreachable!("we're currently not exporting signing")
+            }
+        }
+    }
+}
+
 #[derive(uniffi::Object)]
 pub struct NetworkId(ByteString);
 
@@ -154,6 +170,16 @@ pub struct PublicKey(p2panda_core::PublicKey);
 
 #[uniffi::export]
 impl PublicKey {
+    #[uniffi::constructor]
+    pub fn from_bytes(value: &[u8]) -> Result<Self, ConversionError> {
+        Ok(Self(p2panda_core::PublicKey::try_from(value)?))
+    }
+
+    #[uniffi::constructor]
+    pub fn from_hex(value: &str) -> Result<Self, ConversionError> {
+        Ok(Self(p2panda_core::PublicKey::from_str(value)?))
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         self.0.as_bytes().to_vec()
     }
@@ -172,10 +198,18 @@ impl PrivateKey {
     pub fn new() -> Self {
         Self(p2panda_core::PrivateKey::new())
     }
-}
 
-#[uniffi::export]
-impl PrivateKey {
+    #[uniffi::constructor]
+    pub fn from_bytes(value: &[u8]) -> Result<Self, ConversionError> {
+        Ok(Self(p2panda_core::PrivateKey::try_from(value)?))
+    }
+
+    #[uniffi::constructor]
+    pub fn from_hex(value: &str) -> Result<Self, ConversionError> {
+        let bytes = ByteString::from_hex(value)?.to_bytes();
+        Ok(Self(p2panda_core::PrivateKey::try_from(&bytes[..])?))
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         self.0.as_bytes().to_vec()
     }

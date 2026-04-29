@@ -10,7 +10,7 @@ use thiserror::Error;
 struct ByteString(p2panda::node::Topic);
 
 impl ByteString {
-    pub fn new() -> Self {
+    pub fn random() -> Self {
         Self(p2panda_core::Topic::new())
     }
 
@@ -103,8 +103,8 @@ pub struct NetworkId(ByteString);
 #[uniffi::export]
 impl NetworkId {
     #[uniffi::constructor]
-    pub fn new() -> Self {
-        Self(ByteString::new())
+    pub fn random() -> Self {
+        Self(ByteString::random())
     }
 
     #[uniffi::constructor]
@@ -137,8 +137,8 @@ pub struct TopicId(ByteString);
 #[uniffi::export]
 impl TopicId {
     #[uniffi::constructor]
-    pub fn new() -> Self {
-        Self(ByteString::new())
+    pub fn random() -> Self {
+        Self(ByteString::random())
     }
 
     #[uniffi::constructor]
@@ -195,7 +195,7 @@ pub struct PrivateKey(p2panda_core::PrivateKey);
 #[uniffi::export]
 impl PrivateKey {
     #[uniffi::constructor]
-    pub fn new() -> Self {
+    pub fn generate() -> Self {
         Self(p2panda_core::PrivateKey::new())
     }
 

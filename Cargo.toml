@@ -12,6 +12,7 @@ name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
 
 [dependencies]
+futures-util = { version = "0.3.32", default-features = false }
 p2panda = { git = "https://github.com/p2panda/p2panda", rev = "533a77df6a964746db3477901faebb4fc4c54275" }
 p2panda-core = { git = "https://github.com/p2panda/p2panda", rev = "533a77df6a964746db3477901faebb4fc4c54275" }
 thiserror = "2.0.18"

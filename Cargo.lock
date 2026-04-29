@@ -2860,6 +2860,7 @@ dependencies = [
 name = "p2panda-ffi"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "p2panda",
  "p2panda-core",
  "thiserror",

@@ -3,7 +3,10 @@
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
+use futures_util::StreamExt;
 use thiserror::Error;
+use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 
 // TODO: Couldn't find a good name for this yet, it's a WORD (32 bytes).
 /// Internally used type representing a (random) 32-byte string.
@@ -40,6 +43,12 @@ impl ByteString {
 impl From<&ByteString> for [u8; 32] {
     fn from(value: &ByteString) -> Self {
         value.0.to_bytes()
+    }
+}
+
+impl From<p2panda_core::Topic> for ByteString {
+    fn from(value: p2panda_core::Topic) -> Self {
+        Self(value)
     }
 }
 
@@ -165,6 +174,12 @@ impl TopicId {
     }
 }
 
+impl From<p2panda_core::Topic> for TopicId {
+    fn from(value: p2panda_core::Topic) -> Self {
+        Self(ByteString::from(value))
+    }
+}
+
 #[derive(uniffi::Object)]
 pub struct PublicKey(p2panda_core::PublicKey);
 
@@ -186,6 +201,12 @@ impl PublicKey {
 
     pub fn to_hex(&self) -> String {
         self.0.to_hex()
+    }
+}
+
+impl From<p2panda_core::PublicKey> for PublicKey {
+    fn from(value: p2panda_core::PublicKey) -> Self {
+        Self(value)
     }
 }
 
@@ -252,6 +273,12 @@ impl Hash {
     }
 }
 
+impl From<p2panda_core::Hash> for Hash {
+    fn from(value: p2panda_core::Hash) -> Self {
+        Self(value)
+    }
+}
+
 #[derive(uniffi::Object)]
 pub struct Node(p2panda::Node);
 
@@ -267,17 +294,22 @@ impl Node {
         PublicKey(self.0.id())
     }
 
-    pub async fn stream(&self, topic: Arc<TopicId>) -> Result<TopicStream, CreateStreamError> {
+    pub async fn stream(
+        &self,
+        topic: Arc<TopicId>,
+        on_event: Arc<dyn OnStreamEvent>,
+    ) -> Result<TopicStream, CreateStreamError> {
         let (tx, rx) = self.0.stream::<Vec<u8>>(topic.0.0).await?;
-        Ok(TopicStream { tx, rx })
+        Ok(TopicStream::new(tx, rx, on_event))
     }
 
     pub async fn ephemeral_stream(
         &self,
         topic: Arc<TopicId>,
+        on_message: Arc<dyn OnEphemeralMessage>,
     ) -> Result<EphemeralStream, CreateStreamError> {
         let (tx, rx) = self.0.ephemeral_stream::<Vec<u8>>(topic.0.0).await?;
-        Ok(EphemeralStream { tx, rx })
+        Ok(EphemeralStream::new(tx, rx, on_message))
     }
 }
 
@@ -288,10 +320,66 @@ pub enum CreateStreamError {
     CreateStream(#[from] p2panda::node::CreateStreamError),
 }
 
+#[uniffi::export(with_foreign)]
+pub trait OnStreamEvent: Send + Sync {
+    fn on_event(&self, event: Arc<StreamEvent>);
+}
+
+#[uniffi::export(with_foreign)]
+pub trait OnEphemeralMessage: Send + Sync {
+    fn on_message(&self, message: Arc<EphemeralMessage>);
+}
+
 #[derive(uniffi::Object)]
 pub struct TopicStream {
     tx: p2panda::streams::StreamPublisher<Vec<u8>>,
-    rx: p2panda::streams::StreamSubscription<Vec<u8>>,
+    ack_tx: mpsc::Sender<(
+        p2panda_core::Hash,
+        oneshot::Sender<Result<(), p2panda::streams::AckedError>>,
+    )>,
+    task_handle: JoinHandle<()>,
+}
+
+impl TopicStream {
+    fn new(
+        tx: p2panda::streams::StreamPublisher<Vec<u8>>,
+        mut rx: p2panda::streams::StreamSubscription<Vec<u8>>,
+        callback: Arc<dyn OnStreamEvent>,
+    ) -> Self {
+        let (ack_tx, mut ack_rx) = mpsc::channel::<(
+            p2panda_core::Hash,
+            oneshot::Sender<Result<(), p2panda::streams::AckedError>>,
+        )>(16);
+
+        // Start an internal task which manages the subscription object. We can call it from the
+        // exported API via an internal mpsc channel.
+        let task_handle = tokio::task::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    Some((hash, result_tx)) = ack_rx.recv() => {
+                        let result = rx.ack(hash).await;
+                        let _ = result_tx.send(result);
+                    }
+                    Some(event) = rx.next() => {
+                        callback.on_event(Arc::new(event.into()));
+                    }
+                }
+            }
+        });
+
+        Self {
+            tx,
+            ack_tx,
+            task_handle,
+        }
+    }
+}
+
+impl Drop for TopicStream {
+    fn drop(&mut self) {
+        self.task_handle.abort();
+    }
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -314,25 +402,17 @@ impl TopicStream {
         Ok(Hash(message_id))
     }
 
-    // TODO: Probably we'll pass in an on_message callback in the constructor instead when creating
-    // the stream.
-    #[allow(unused)]
-    pub async fn subscribe(&self, on_message: Arc<dyn OnMessage>) {
-        // TODO: This needs spawning a task where we call on_message whenever a message arrives on
-        // the subscriber stream. The subscriber itself is not clonable so probably we want to use
-        // a channel instead to ack as well.
-    }
-
     pub async fn ack(&self, message_id: Arc<Hash>) -> Result<(), AckedError> {
-        self.rx.ack(message_id.0).await?;
+        let (result_tx, result_rx) = oneshot::channel();
+        self.ack_tx
+            .send((message_id.0, result_tx))
+            .await
+            .expect("internal task runs until whole type was dropped");
+        result_rx
+            .await
+            .expect("internal task runs until whole type was dropped")?;
         Ok(())
     }
-}
-
-#[uniffi::export(with_foreign)]
-pub trait OnMessage: Send + Sync {
-    // TODO: Correct message type with different events, etc.
-    fn on_message(&self, message: Vec<u8>);
 }
 
 // TODO: Not sure if this approach of dedicated error types makes sense, maybe one large error type
@@ -351,11 +431,93 @@ pub enum AckedError {
     AckedError(#[from] p2panda::streams::AckedError),
 }
 
-#[allow(unused)]
+#[derive(uniffi::Object)]
+pub enum Source {}
+
+#[derive(uniffi::Object)]
+pub enum StreamEvent {
+    Processed { operation: ProcessedOperation },
+    SyncStarted,
+    SyncEnded,
+    Error,
+}
+
+impl From<p2panda::streams::StreamEvent<Vec<u8>>> for StreamEvent {
+    fn from(event: p2panda::streams::StreamEvent<Vec<u8>>) -> Self {
+        match event {
+            p2panda::streams::StreamEvent::Processed { operation, .. } => Self::Processed {
+                operation: ProcessedOperation(operation),
+            },
+            p2panda::streams::StreamEvent::SyncStarted { .. } => Self::SyncStarted,
+            p2panda::streams::StreamEvent::SyncEnded { .. } => Self::SyncEnded,
+            p2panda::streams::StreamEvent::ProcessingFailed { .. } => Self::Error,
+            p2panda::streams::StreamEvent::DecodeFailed { .. } => Self::Error,
+            p2panda::streams::StreamEvent::ReplayFailed { .. } => Self::Error,
+            p2panda::streams::StreamEvent::AckFailed { .. } => Self::Error,
+        }
+    }
+}
+
+#[derive(uniffi::Object)]
+pub struct ProcessedOperation(p2panda::streams::ProcessedOperation<Vec<u8>>);
+
+#[uniffi::export]
+impl ProcessedOperation {
+    pub fn topic(&self) -> TopicId {
+        self.0.topic().into()
+    }
+
+    pub fn id(&self) -> Hash {
+        self.0.id().into()
+    }
+
+    pub fn author(&self) -> PublicKey {
+        self.0.author().into()
+    }
+
+    pub fn timestamp(&self) -> u64 {
+        self.0.timestamp()
+    }
+
+    pub fn message(&self) -> Vec<u8> {
+        self.0.message().clone()
+    }
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl ProcessedOperation {
+    pub async fn ack(&self) -> Result<(), AckedError> {
+        self.0.ack().await?;
+        Ok(())
+    }
+}
+
 #[derive(uniffi::Object)]
 pub struct EphemeralStream {
     tx: p2panda::streams::EphemeralStreamPublisher<Vec<u8>>,
-    rx: p2panda::streams::EphemeralStreamSubscription<Vec<u8>>,
+    task_handle: JoinHandle<()>,
+}
+
+impl EphemeralStream {
+    fn new(
+        tx: p2panda::streams::EphemeralStreamPublisher<Vec<u8>>,
+        mut rx: p2panda::streams::EphemeralStreamSubscription<Vec<u8>>,
+        callback: Arc<dyn OnEphemeralMessage>,
+    ) -> Self {
+        let task_handle = tokio::spawn(async move {
+            while let Some(message) = rx.next().await {
+                callback.on_message(Arc::new(message.into()));
+            }
+        });
+
+        Self { tx, task_handle }
+    }
+}
+
+impl Drop for EphemeralStream {
+    fn drop(&mut self) {
+        self.task_handle.abort();
+    }
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -375,6 +537,34 @@ impl EphemeralStream {
 pub enum EphemeralPublishError {
     #[error(transparent)]
     EphemeralPublish(#[from] p2panda::streams::EphemeralPublishError),
+}
+
+#[derive(uniffi::Object)]
+pub struct EphemeralMessage(p2panda::streams::EphemeralMessage<Vec<u8>>);
+
+#[uniffi::export]
+impl EphemeralMessage {
+    pub fn topic(&self) -> TopicId {
+        self.0.topic().into()
+    }
+
+    pub fn author(&self) -> PublicKey {
+        self.0.author().into()
+    }
+
+    pub fn timestamp(&self) -> u64 {
+        self.0.timestamp()
+    }
+
+    pub fn body(&self) -> Vec<u8> {
+        self.0.body().clone()
+    }
+}
+
+impl From<p2panda::streams::EphemeralMessage<Vec<u8>>> for EphemeralMessage {
+    fn from(value: p2panda::streams::EphemeralMessage<Vec<u8>>) -> Self {
+        Self(value)
+    }
 }
 
 #[derive(uniffi::Object)]

@@ -14,22 +14,21 @@
   macros](https://mozilla.github.io/uniffi-rs/latest/tutorial/Rust_scaffolding.html)
   to "scaffold" everything for UniFFI from Rust, so there's no need to create
   an additional UDL file.
-- `uniffi-bindgen` is the UniFFI CLI tool we need to generate a "Dynamic System
-  Library" (cdylib) for p2panda from the Rust code-base. This tool can be
-  compiled from this project.
+- `uniffi-bindgen` is the UniFFI CLI tool we need to generate p2panda FFI
+  bindings for various languages. This tool can be compiled from this project.
 
 ## Usage
 
 1. First compile `uniffi-bindgen` and the p2panda library by running `cargo
-   build --release`. The binary and library lands in the `target` folder.
+   build --release`. The binary and library lands in the `target` folder. Don't
+   forget to repeat this step whenever you change the Rust code.
 2. From now on we can use the tool `uniffi-bindgen` via `cargo run --bin
-   uniffi-bindgen --release`. Don't forget to repeat the first step whenever
-   you change the Rust code.
+   uniffi-bindgen --release`.
 3. The p2panda library is compiled as well and ready to be used for FFI into
    other languages (Python, Go, etc.). Follow the next steps below for
    generating FFI bindings for specific languages.
-4. Make sure the library is available by linking it into the right path:
-   `ln -s ./target/release/libp2panda.so ./python/p2panda` or similar.
+4. Make sure the library is available by linking it into the right path: `ln -s
+   ./target/release/libp2panda.so ./python/p2panda` or similar.
 
 ### Python
 

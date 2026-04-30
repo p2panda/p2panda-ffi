@@ -38,10 +38,23 @@
 
 ### Go
 
+`libp2panda` is currently built for the `x86_64-unknown-linux-musl` target.
+Other targets can be added on request.
+
 1. Make sure you have
    [uniffi-bindgen-go](https://github.com/NordSecurity/uniffi-bindgen-go)
    installed in your Rust toolbelt.
-2. Run `uniffi-bindgen-go ./target/release/libp2panda.so --out-dir ./go`.
+2. Run `./scripts/generate-go-uniffi.sh`
+
+#### Examples
+
+See the examples in [`./examples/go`](./examples/go).
+
+#### Test bindings
+
+```
+./scripts/test-go-uniffi.sh
+```
 
 ### Node.js
 

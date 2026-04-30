@@ -22,3 +22,10 @@ uniffi = { version = "0.31.1", features = ["cli", "tokio"] }
 
 [build-dependencies]
 uniffi = { version = "0.31.1", features = ["build"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+panic = "unwind"
+strip = true

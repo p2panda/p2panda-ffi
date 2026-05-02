@@ -1,7 +1,7 @@
 # FFI bindings for p2panda
 
-> **Please Note** This is highly experimental and things can break & change
-> anytime.
+> [!IMPORTANT]
+> This is highly experimental and things can break & change at any point.
 
 ## Good to know
 
@@ -16,6 +16,7 @@
   an additional UDL file.
 - `uniffi-bindgen` is the UniFFI CLI tool we need to generate p2panda FFI
   bindings for various languages. This tool can be compiled from this project.
+- Next to these bindings you'll find GObject bindings (GLib/GObject introspection) for p2panda in [`p2panda-gobject`](https://github.com/p2panda/p2panda-gobject)
 
 ## Usage
 

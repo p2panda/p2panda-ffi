@@ -19,7 +19,7 @@ impl ByteString {
 
     pub fn from_bytes(value: &[u8]) -> Result<Self, ConversionError> {
         let topic = p2panda_core::Topic::try_from(value)?;
-        Ok(Self(topic.into()))
+        Ok(Self(topic))
     }
 
     pub fn from_hash(hash: Arc<Hash>) -> Self {
@@ -28,7 +28,7 @@ impl ByteString {
 
     pub fn from_hex(value: &str) -> Result<Self, ConversionError> {
         let topic = p2panda_core::Topic::from_str(value)?;
-        Ok(Self(topic.into()))
+        Ok(Self(topic))
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -184,7 +184,7 @@ impl From<p2panda_core::Topic> for TopicId {
     }
 }
 
-#[derive(uniffi::Object)]
+#[derive(Debug, uniffi::Object)]
 pub struct PublicKey(p2panda_core::PublicKey);
 
 #[uniffi::export]
@@ -289,6 +289,7 @@ pub struct RelayUrl(p2panda::node::RelayUrl);
 #[uniffi::export]
 impl RelayUrl {
     #[uniffi::constructor]
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(value: &str) -> Result<Self, ConversionError> {
         Ok(Self(p2panda::node::RelayUrl::from_str(value).map_err(
             |err| ConversionError::ParseRelayUrl(err.to_string()),
@@ -318,16 +319,16 @@ impl Node {
     pub async fn stream(
         &self,
         topic: Arc<TopicId>,
-        on_event: Arc<dyn OnStreamEvent>,
+        callback: Arc<dyn StreamCallback>,
     ) -> Result<TopicStream, CreateStreamError> {
         let (tx, rx) = self.0.stream::<Vec<u8>>(topic.0.0).await?;
-        Ok(TopicStream::new(tx, rx, on_event))
+        Ok(TopicStream::new(tx, rx, callback))
     }
 
     pub async fn ephemeral_stream(
         &self,
         topic: Arc<TopicId>,
-        on_message: Arc<dyn OnEphemeralMessage>,
+        on_message: Arc<dyn EphemeralCallback>,
     ) -> Result<EphemeralStream, CreateStreamError> {
         let (tx, rx) = self.0.ephemeral_stream::<Vec<u8>>(topic.0.0).await?;
         Ok(EphemeralStream::new(tx, rx, on_message))
@@ -342,12 +343,202 @@ pub enum CreateStreamError {
 }
 
 #[uniffi::export(with_foreign)]
-pub trait OnStreamEvent: Send + Sync {
-    fn on_event(&self, event: Arc<StreamEvent>);
+pub trait StreamCallback: Send + Sync {
+    fn on_sync_event(&self, event: SyncEvent);
+    fn on_error(&self, error: StreamError);
+    fn on_operation(&self, processed: Arc<ProcessedOperation>, source: Source);
+}
+
+#[derive(uniffi::Object)]
+pub struct Event(
+    p2panda::processor::Event<
+        p2panda::operation::LogId,
+        p2panda::operation::Extensions,
+        p2panda_core::topic::Topic,
+    >,
+);
+
+impl
+    From<
+        p2panda::processor::Event<
+            p2panda::operation::LogId,
+            p2panda::operation::Extensions,
+            p2panda_core::topic::Topic,
+        >,
+    > for Event
+{
+    fn from(
+        value: p2panda::processor::Event<
+            p2panda::operation::LogId,
+            p2panda::operation::Extensions,
+            p2panda_core::topic::Topic,
+        >,
+    ) -> Self {
+        Self(value)
+    }
+}
+
+impl std::fmt::Debug for Event {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Event").field(&self.0).finish()
+    }
+}
+
+#[derive(Debug, uniffi::Enum)]
+pub enum SessionPhase {
+    Sync,
+    Live,
+}
+
+impl From<p2panda::streams::SessionPhase> for SessionPhase {
+    fn from(value: p2panda::streams::SessionPhase) -> Self {
+        match value {
+            p2panda::streams::SessionPhase::Sync => Self::Sync,
+            p2panda::streams::SessionPhase::Live => Self::Live,
+        }
+    }
+}
+
+#[derive(Debug, uniffi::Enum)]
+pub enum Source {
+    SyncSession {
+        /// Id of the remote sending node.
+        remote_node_id: Arc<PublicKey>,
+
+        /// Id of the sync session.
+        session_id: u64,
+
+        /// Operation sent during this session.
+        sent_operations: u64,
+
+        /// Operations received during this session.
+        received_operations: u64,
+
+        /// Bytes sent during this session.
+        sent_bytes: u64,
+
+        /// Bytes received during this session.
+        received_bytes: u64,
+
+        /// Total bytes sent for this topic across all sessions.
+        sent_bytes_topic_total: u64,
+
+        /// Total bytes received for this topic across all sessions.
+        received_bytes_topic_total: u64,
+
+        /// The session phase during which an operation arrived.
+        phase: SessionPhase,
+    },
+    LocalStore,
+}
+
+impl From<p2panda::streams::Source> for Source {
+    fn from(value: p2panda::streams::Source) -> Self {
+        match value {
+            p2panda::streams::Source::SyncSession {
+                remote_node_id,
+                session_id,
+                sent_operations,
+                received_operations,
+                sent_bytes,
+                received_bytes,
+                sent_bytes_topic_total,
+                received_bytes_topic_total,
+                phase,
+            } => Self::SyncSession {
+                remote_node_id: Arc::new(remote_node_id.into()),
+                session_id,
+                sent_operations,
+                received_operations,
+                sent_bytes,
+                received_bytes,
+                sent_bytes_topic_total,
+                received_bytes_topic_total,
+                phase: phase.into(),
+            },
+            p2panda::streams::Source::LocalStore => Self::LocalStore,
+        }
+    }
+}
+
+#[derive(uniffi::Enum)]
+pub enum SyncEvent {
+    Started {
+        /// Id of the remote sending node.
+        remote_node_id: Arc<PublicKey>,
+
+        /// Id of the sync session.
+        session_id: u64,
+
+        /// Total operations which will be received during this session.
+        incoming_operations: u64,
+
+        /// Total operations which will be sent during this session.
+        outgoing_operations: u64,
+
+        /// Total bytes which will be received during this session.
+        incoming_bytes: u64,
+
+        /// Total bytes which will be sent during this session.
+        outgoing_bytes: u64,
+
+        /// Total sessions currently running over the same topic.
+        topic_sessions: u64,
+    },
+    Ended {
+        /// Id of the remote sending node.
+        remote_node_id: Arc<PublicKey>,
+
+        /// Id of the sync session.
+        session_id: u64,
+
+        /// Operation sent during this session.
+        sent_operations: u64,
+
+        /// Operations received during this session.
+        received_operations: u64,
+
+        /// Bytes sent during this session.
+        sent_bytes: u64,
+
+        /// Bytes received during this session.
+        received_bytes: u64,
+
+        /// Total bytes sent for this topic across all sessions.
+        sent_bytes_topic_total: u64,
+
+        /// Total bytes received for this topic across all sessions.
+        received_bytes_topic_total: u64,
+
+        /// If the sync session ended with an error the reason is included here.
+        error: Option<SyncError>,
+    },
+}
+
+#[derive(Debug, Error, uniffi::Error)]
+#[uniffi(flat_error)]
+pub enum SyncError {
+    #[error(transparent)]
+    SyncError(#[from] p2panda::streams::SyncError),
+}
+
+#[derive(Debug, Error, uniffi::Error)]
+pub enum StreamError {
+    #[error("processing operation failed: {error}")]
+    ProcessingFailed { event: Arc<Event>, error: String },
+
+    #[error("decoding message payload failed: {error}")]
+    DecodeFailed { event: Arc<Event>, error: String },
+
+    #[error("replaying events failed: {error}")]
+    ReplayFailed { error: String },
+
+    #[error("acking event failed: {error}")]
+    AckFailed { event: Arc<Event>, error: String },
 }
 
 #[uniffi::export(with_foreign)]
-pub trait OnEphemeralMessage: Send + Sync {
+pub trait EphemeralCallback: Send + Sync {
     fn on_message(&self, message: Arc<EphemeralMessage>);
 }
 
@@ -365,7 +556,7 @@ impl TopicStream {
     fn new(
         tx: p2panda::streams::StreamPublisher<Vec<u8>>,
         mut rx: p2panda::streams::StreamSubscription<Vec<u8>>,
-        callback: Arc<dyn OnStreamEvent>,
+        callback: Arc<dyn StreamCallback>,
     ) -> Self {
         let (ack_tx, mut ack_rx) = mpsc::channel::<(
             p2panda_core::Hash,
@@ -383,7 +574,76 @@ impl TopicStream {
                         let _ = result_tx.send(result);
                     }
                     Some(event) = rx.next() => {
-                        callback.on_event(Arc::new(event.into()));
+                        match event {
+                            p2panda::streams::StreamEvent::Processed { operation, source } => {
+                                callback.on_operation(Arc::new(ProcessedOperation(operation)), source.into());
+                            },
+                            p2panda::streams::StreamEvent::SyncStarted {
+                                remote_node_id,
+                                session_id,
+                                incoming_operations,
+                                outgoing_operations,
+                                incoming_bytes,
+                                outgoing_bytes,
+                                topic_sessions,
+                            } => {
+                                callback.on_sync_event(SyncEvent::Started {
+                                    remote_node_id: Arc::new(remote_node_id.into()),
+                                    session_id,
+                                    incoming_operations,
+                                    outgoing_operations,
+                                    incoming_bytes,
+                                    outgoing_bytes,
+                                    topic_sessions,
+                                });
+                            },
+                            p2panda::streams::StreamEvent::SyncEnded {
+                                remote_node_id,
+                                session_id,
+                                sent_operations,
+                                received_operations,
+                                sent_bytes,
+                                received_bytes,
+                                sent_bytes_topic_total,
+                                received_bytes_topic_total,
+                                error
+                            } => {
+                                callback.on_sync_event(SyncEvent::Ended {
+                                    remote_node_id: Arc::new(remote_node_id.into()),
+                                    session_id,
+                                    sent_operations,
+                                    received_operations,
+                                    sent_bytes,
+                                    received_bytes,
+                                    sent_bytes_topic_total,
+                                    received_bytes_topic_total,
+                                    error: error.map(|error| error.into()),
+                                });
+                            }
+                            p2panda::streams::StreamEvent::ProcessingFailed { event, error, .. } => {
+                                callback.on_error(StreamError::ProcessingFailed {
+                                    event: Arc::new(event.into()),
+                                    error: error.to_string(),
+                                });
+                            },
+                            p2panda::streams::StreamEvent::DecodeFailed { event, error } => {
+                                callback.on_error(StreamError::DecodeFailed {
+                                    event: Arc::new(event.into()),
+                                    error: error.to_string(),
+                                });
+                            },
+                            p2panda::streams::StreamEvent::ReplayFailed { error } => {
+                                callback.on_error(StreamError::ReplayFailed {
+                                    error: error.to_string(),
+                                });
+                            },
+                            p2panda::streams::StreamEvent::AckFailed { event, error } => {
+                                callback.on_error(StreamError::AckFailed {
+                                    event: Arc::new(event.into()),
+                                    error: error.to_string(),
+                                });
+                            },
+                        }
                     }
                 }
             }
@@ -453,33 +713,6 @@ pub enum AckedError {
 }
 
 #[derive(uniffi::Object)]
-pub enum Source {}
-
-#[derive(uniffi::Object)]
-pub enum StreamEvent {
-    Processed { operation: ProcessedOperation },
-    SyncStarted,
-    SyncEnded,
-    Error,
-}
-
-impl From<p2panda::streams::StreamEvent<Vec<u8>>> for StreamEvent {
-    fn from(event: p2panda::streams::StreamEvent<Vec<u8>>) -> Self {
-        match event {
-            p2panda::streams::StreamEvent::Processed { operation, .. } => Self::Processed {
-                operation: ProcessedOperation(operation),
-            },
-            p2panda::streams::StreamEvent::SyncStarted { .. } => Self::SyncStarted,
-            p2panda::streams::StreamEvent::SyncEnded { .. } => Self::SyncEnded,
-            p2panda::streams::StreamEvent::ProcessingFailed { .. } => Self::Error,
-            p2panda::streams::StreamEvent::DecodeFailed { .. } => Self::Error,
-            p2panda::streams::StreamEvent::ReplayFailed { .. } => Self::Error,
-            p2panda::streams::StreamEvent::AckFailed { .. } => Self::Error,
-        }
-    }
-}
-
-#[derive(uniffi::Object)]
 pub struct ProcessedOperation(p2panda::streams::ProcessedOperation<Vec<u8>>);
 
 #[uniffi::export]
@@ -523,7 +756,7 @@ impl EphemeralStream {
     fn new(
         tx: p2panda::streams::EphemeralStreamPublisher<Vec<u8>>,
         mut rx: p2panda::streams::EphemeralStreamSubscription<Vec<u8>>,
-        callback: Arc<dyn OnEphemeralMessage>,
+        callback: Arc<dyn EphemeralCallback>,
     ) -> Self {
         let task_handle = tokio::spawn(async move {
             while let Some(message) = rx.next().await {
@@ -612,6 +845,7 @@ impl NodeBuilder {
 #[uniffi::export]
 impl NodeBuilder {
     #[uniffi::constructor]
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let inner = p2panda::Node::builder();
         Self(Mutex::new(Some(inner)))

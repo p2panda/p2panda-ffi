@@ -206,6 +206,10 @@ impl PublicKey {
     pub fn to_hex(&self) -> String {
         self.0.to_hex()
     }
+
+    pub fn verify(&self, bytes: &[u8], signature: Arc<Signature>) -> bool {
+        self.0.verify(bytes, &signature.0)
+    }
 }
 
 impl From<p2panda_core::PublicKey> for PublicKey {
@@ -245,6 +249,35 @@ impl PrivateKey {
 
     pub fn public_key(&self) -> PublicKey {
         PublicKey(self.0.public_key())
+    }
+
+    pub fn sign(&self, bytes: &[u8]) -> Signature {
+        Signature(self.0.sign(bytes))
+    }
+}
+
+#[derive(uniffi::Object)]
+pub struct Signature(p2panda_core::Signature);
+
+#[uniffi::export]
+impl Signature {
+    #[uniffi::constructor]
+    pub fn from_bytes(value: &[u8]) -> Result<Self, ConversionError> {
+        Ok(Self(p2panda_core::Signature::try_from(value)?))
+    }
+
+    #[uniffi::constructor]
+    pub fn from_hex(value: &str) -> Result<Self, ConversionError> {
+        let bytes = ByteString::from_hex(value)?.to_bytes();
+        Ok(Self(p2panda_core::Signature::try_from(&bytes[..])?))
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.0.to_bytes().into()
+    }
+
+    pub fn to_hex(&self) -> String {
+        self.0.to_hex()
     }
 }
 
@@ -358,8 +391,18 @@ impl Header {
         self.0.version
     }
 
+    pub fn hash(&self) -> Arc<Hash> {
+        Arc::new(self.0.hash().into())
+    }
+
     pub fn public_key(&self) -> Arc<PublicKey> {
         Arc::new(self.0.public_key.into())
+    }
+
+    pub fn signature(&self) -> Arc<Signature> {
+        Arc::new(Signature(
+            self.0.signature.expect("signature always exists"),
+        ))
     }
 
     pub fn timestamp(&self) -> u64 {
@@ -371,7 +414,12 @@ impl Header {
     }
 
     pub fn payload_hash(&self) -> Arc<Hash> {
-        Arc::new(self.0.hash().into())
+        Arc::new(
+            self.0
+                .payload_hash
+                .expect("payload hash always exists")
+                .into(),
+        )
     }
 
     pub fn seq_num(&self) -> u64 {

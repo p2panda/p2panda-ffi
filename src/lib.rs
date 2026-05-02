@@ -62,6 +62,10 @@ pub enum ConversionError {
     /// String contains invalid hexadecimal characters.
     #[error("invalid hex encoding in string: {0}")]
     InvalidHexEncoding(String),
+
+    /// Invalid iroh Relay URL.
+    #[error("invalid iroh relay url: {0}")]
+    ParseRelayUrl(String),
 }
 
 impl From<p2panda_core::topic::TopicError> for ConversionError {
@@ -276,6 +280,23 @@ impl Hash {
 impl From<p2panda_core::Hash> for Hash {
     fn from(value: p2panda_core::Hash) -> Self {
         Self(value)
+    }
+}
+
+#[derive(uniffi::Object)]
+pub struct RelayUrl(p2panda::node::RelayUrl);
+
+#[uniffi::export]
+impl RelayUrl {
+    #[uniffi::constructor]
+    pub fn from_str(value: &str) -> Result<Self, ConversionError> {
+        Ok(Self(p2panda::node::RelayUrl::from_str(value).map_err(
+            |err| ConversionError::ParseRelayUrl(err.to_string()),
+        )?))
+    }
+
+    pub fn to_str(&self) -> String {
+        self.0.to_string()
     }
 }
 
@@ -604,11 +625,81 @@ impl NodeBuilder {
         self.update(|builder| builder.database_url(url))
     }
 
+    pub fn ack_policy(&self, ack_policy: AckPolicy) -> Result<(), NodeBuilderError> {
+        self.update(|builder| builder.ack_policy(ack_policy.into()))
+    }
+
     pub fn network_id(&self, network_id: Arc<NetworkId>) -> Result<(), NodeBuilderError> {
         self.update(|builder| builder.network_id((&network_id.0).into()))
     }
 
-    // TODO: Add more builder methods.
+    pub fn relay_url(&self, url: Arc<RelayUrl>) -> Result<(), NodeBuilderError> {
+        self.update(|builder| builder.relay_url(url.0.clone()))
+    }
+
+    pub fn bootstrap(
+        &self,
+        node_id: Arc<PublicKey>,
+        relay_url: Arc<RelayUrl>,
+    ) -> Result<(), NodeBuilderError> {
+        self.update(|builder| builder.bootstrap(node_id.0, relay_url.0.clone()))
+    }
+
+    pub fn mdns_mode(&self, mode: MdnsDiscoveryMode) -> Result<(), NodeBuilderError> {
+        self.update(|builder| builder.mdns_mode(mode.into()))
+    }
+
+    pub fn bind_ip_v4(&self, ip_address: &str) -> Result<(), NodeBuilderError> {
+        let ip_address = std::net::Ipv4Addr::from_str(ip_address)
+            .map_err(|err| IpAddrError::ParseInvalidAddr(err.to_string()))?;
+        self.update(|builder| builder.bind_ip_v4(ip_address))
+    }
+
+    pub fn bind_port_v4(&self, port: u16) -> Result<(), NodeBuilderError> {
+        self.update(|builder| builder.bind_port_v4(port))
+    }
+
+    pub fn bind_ip_v6(&self, ip_address: &str) -> Result<(), NodeBuilderError> {
+        let ip_address = std::net::Ipv6Addr::from_str(ip_address)
+            .map_err(|err| IpAddrError::ParseInvalidAddr(err.to_string()))?;
+        self.update(|builder| builder.bind_ip_v6(ip_address))
+    }
+
+    pub fn bind_port_v6(&self, port: u16) -> Result<(), NodeBuilderError> {
+        self.update(|builder| builder.bind_port_v6(port))
+    }
+}
+
+#[derive(uniffi::Enum)]
+pub enum AckPolicy {
+    Explicit,
+    Automatic,
+}
+
+impl From<AckPolicy> for p2panda::node::AckPolicy {
+    fn from(value: AckPolicy) -> Self {
+        match value {
+            AckPolicy::Explicit => Self::Explicit,
+            AckPolicy::Automatic => Self::Automatic,
+        }
+    }
+}
+
+#[derive(uniffi::Enum)]
+pub enum MdnsDiscoveryMode {
+    Disabled,
+    Passive,
+    Active,
+}
+
+impl From<MdnsDiscoveryMode> for p2panda::node::MdnsDiscoveryMode {
+    fn from(value: MdnsDiscoveryMode) -> Self {
+        match value {
+            MdnsDiscoveryMode::Disabled => unimplemented!("not yet supported"),
+            MdnsDiscoveryMode::Passive => Self::Passive,
+            MdnsDiscoveryMode::Active => Self::Active,
+        }
+    }
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -622,12 +713,22 @@ impl NodeBuilder {
 
 #[derive(Debug, Error, uniffi::Error)]
 #[uniffi(flat_error)]
+pub enum IpAddrError {
+    #[error("could not parse invalid IPv4 or v6 address: {0}")]
+    ParseInvalidAddr(String),
+}
+
+#[derive(Debug, Error, uniffi::Error)]
+#[uniffi(flat_error)]
 pub enum NodeBuilderError {
     #[error("builder was already consumed to spawn node, please create a new one")]
     AlreadyConsumed,
 
     #[error("thread holding the builder mutex panicked")]
     MutexPoisoned,
+
+    #[error(transparent)]
+    IpAddr(#[from] IpAddrError),
 }
 
 #[derive(Debug, Error, uniffi::Error)]

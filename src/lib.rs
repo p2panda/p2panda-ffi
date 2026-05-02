@@ -350,6 +350,54 @@ pub trait StreamCallback: Send + Sync {
 }
 
 #[derive(uniffi::Object)]
+pub struct Header(p2panda::operation::Header);
+
+#[uniffi::export]
+impl Header {
+    pub fn version(&self) -> u64 {
+        self.0.version
+    }
+
+    pub fn public_key(&self) -> Arc<PublicKey> {
+        Arc::new(self.0.public_key.into())
+    }
+
+    pub fn timestamp(&self) -> u64 {
+        self.0.timestamp.into()
+    }
+
+    pub fn payload_size(&self) -> u64 {
+        self.0.payload_size
+    }
+
+    pub fn payload_hash(&self) -> Arc<Hash> {
+        Arc::new(self.0.hash().into())
+    }
+
+    pub fn seq_num(&self) -> u64 {
+        self.0.seq_num
+    }
+
+    pub fn backlink(&self) -> Option<Arc<Hash>> {
+        self.0.backlink.map(|hash| Arc::new(hash.into()))
+    }
+
+    pub fn prune_flag(&self) -> bool {
+        self.0.extensions.prune_flag.is_set()
+    }
+
+    pub fn log_id(&self) -> Vec<u8> {
+        self.0.extensions.log_id.as_bytes().to_vec()
+    }
+}
+
+impl From<&p2panda::operation::Header> for Header {
+    fn from(value: &p2panda::operation::Header) -> Self {
+        Self(value.clone())
+    }
+}
+
+#[derive(uniffi::Object)]
 pub struct Event(
     p2panda::processor::Event<
         p2panda::operation::LogId,
@@ -357,6 +405,25 @@ pub struct Event(
         p2panda_core::topic::Topic,
     >,
 );
+
+#[uniffi::export]
+impl Event {
+    pub fn header(&self) -> Header {
+        self.0.header().into()
+    }
+
+    pub fn body(&self) -> Option<Vec<u8>> {
+        self.0.body().map(|body| body.to_bytes())
+    }
+
+    pub fn is_completed(&self) -> bool {
+        self.0.is_completed()
+    }
+
+    pub fn is_failed(&self) -> bool {
+        self.0.is_failed()
+    }
+}
 
 impl
     From<
@@ -735,6 +802,10 @@ impl ProcessedOperation {
 
     pub fn message(&self) -> Vec<u8> {
         self.0.message().clone()
+    }
+
+    pub fn processed(&self) -> Event {
+        Event(self.0.processed().clone())
     }
 }
 

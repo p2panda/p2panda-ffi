@@ -4,20 +4,38 @@
   "description": "Node.js FFI bindings for p2panda",
   "homepage": "https://github.com/p2panda/p2panda-ffi#readme",
   "type": "module",
-  "bugs": {
-    "url": "https://github.com/p2panda/p2panda-ffi/issues"
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
   },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "./dist"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/p2panda/p2panda-ffi.git"
   },
   "license": "MIT",
-  "author": "",
-  "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc",
+    "test": "node --test --loader=tsx ./dist/**/*.test.js",
+    "lint": "eslint .",
+    "format": "prettier --write ."
   },
   "dependencies": {
     "p2panda_ffi": "file:nodejs/p2panda_ffi"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.6.0",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0",
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3"
   }
 }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use thiserror::Error;
 
 use crate::builder::NodeBuilderError;
-use crate::core::{PublicKey, TopicId};
+use crate::core::{Cursor, NetworkId, PublicKey, RelayUrl, TopicId};
 use crate::ephemeral_stream::{EphemeralMessage, EphemeralStream};
 use crate::topic_stream::{ProcessedOperation, Source, StreamError, SyncEvent, TopicStream};
 
@@ -22,6 +22,21 @@ impl Node {
 
     pub fn id(&self) -> PublicKey {
         self.0.id().into()
+    }
+
+    pub fn network_id(&self) -> NetworkId {
+        self.0.network_id().into()
+    }
+
+    pub async fn insert_bootstrap(
+        &self,
+        node_id: Arc<PublicKey>,
+        relay_url: Arc<RelayUrl>,
+    ) -> Result<(), NetworkError> {
+        self.0
+            .insert_bootstrap(node_id.to_inner(), relay_url.to_inner())
+            .await?;
+        Ok(())
     }
 
     pub async fn stream(
@@ -79,4 +94,11 @@ pub enum SpawnError {
 
     #[error(transparent)]
     Rpc(#[from] uniffi::UnexpectedUniFFICallbackError),
+}
+
+#[derive(Debug, Error, uniffi::Error)]
+#[uniffi(flat_error)]
+pub enum NetworkError {
+    #[error(transparent)]
+    Network(#[from] p2panda::network::NetworkError),
 }

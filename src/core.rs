@@ -143,6 +143,12 @@ impl NetworkId {
     }
 }
 
+impl From<p2panda::node::NetworkId> for NetworkId {
+    fn from(value: p2panda::node::NetworkId) -> Self {
+        Self(ByteString(value.into()))
+    }
+}
+
 #[derive(uniffi::Object)]
 pub struct TopicId(ByteString);
 

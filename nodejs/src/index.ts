@@ -3,7 +3,11 @@ import { serialize, deserialize } from "node:v8";
 import * as ffi from "../p2panda_ffi/index.js";
 
 function toNumber(value: bigint | number): number {
-  return parseInt((value as bigint).toString());
+  if (value > BigInt(Number.MAX_VALUE)) {
+    throw new Error("can't convert bigint to number as MAX_VALUE reached");
+  }
+
+  return Number(value);
 }
 
 export class PublicKey {
@@ -126,6 +130,22 @@ export class NodeBuilder {
     this.__inner.mdns_mode(ffiMode);
   }
 
+  public bindPortV4(port: number) {
+    this.__inner.bind_port_v4(port);
+  }
+
+  public bindIpV4(address: string) {
+    this.__inner.bind_ip_v4(address);
+  }
+
+  public bindPortV6(port: number) {
+    this.__inner.bind_port_v6(port);
+  }
+
+  public bindIpV6(address: string) {
+    this.__inner.bind_ip_v6(address);
+  }
+
   public async spawn(): Promise<Node> {
     const ffiNode = await this.__inner.spawn();
     return new Node(ffiNode);
@@ -169,7 +189,7 @@ export type Operation<T> = {
 
 export interface TopicStreamCallback<T> {
   onEvent?: (streamEvent: ffi.StreamEvent) => void;
-  onError?: (error: ffi.StreamError) => void;
+  onError?: (error: string) => void;
   onOperation: (operation: Operation<T>) => void;
 }
 
@@ -250,7 +270,7 @@ export class Node {
       },
       on_error: (error) => {
         if (callback.onError) {
-          callback.onError(error);
+          callback.onError(error.toString());
         }
       },
       on_operation: (operation, _source) => {
@@ -259,9 +279,7 @@ export class Node {
           message = deserialize(operation.message());
         } catch (_error) {
           if (callback.onError) {
-            callback.onError(
-              new ffi.StreamErrorDecodeFailed("failed deserializing")
-            );
+            callback.onError("failed deserializing message");
           }
 
           return;
@@ -270,7 +288,7 @@ export class Node {
         const id = operation.id().to_hex();
         const topicId = operation.topic().to_hex();
         const author = operation.author().to_hex();
-        const timestamp = toNumber((operation.timestamp() as bigint) / 1000n);
+        const timestamp = toNumber((operation.timestamp() as bigint) / 1000000n);
 
         const ffiHeader = operation.processed().header();
         const ffiBacklink = ffiHeader.backlink();

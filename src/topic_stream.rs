@@ -58,7 +58,7 @@ impl TopicStream {
                                 outgoing_bytes,
                                 topic_sessions,
                             } => {
-                                callback.on_sync_event(SyncEvent::Started {
+                                callback.on_event(StreamEvent::SyncStarted {
                                     remote_node_id: Arc::new(remote_node_id.into()),
                                     session_id,
                                     incoming_operations,
@@ -79,7 +79,7 @@ impl TopicStream {
                                 received_bytes_topic_total,
                                 error
                             } => {
-                                callback.on_sync_event(SyncEvent::Ended {
+                                callback.on_event(StreamEvent::SyncEnded {
                                     remote_node_id: Arc::new(remote_node_id.into()),
                                     session_id,
                                     sent_operations,
@@ -93,13 +93,13 @@ impl TopicStream {
                             }
                             p2panda::streams::StreamEvent::ProcessingFailed { event, error, .. } => {
                                 callback.on_error(StreamError::ProcessingFailed {
-                                    event: Arc::new(event.into()),
+                                    event: Arc::new((&event).into()),
                                     error: error.to_string(),
                                 });
                             },
                             p2panda::streams::StreamEvent::DecodeFailed { event, error } => {
                                 callback.on_error(StreamError::DecodeFailed {
-                                    event: Arc::new(event.into()),
+                                    event: Arc::new((&event).into()),
                                     error: error.to_string(),
                                 });
                             },
@@ -110,7 +110,7 @@ impl TopicStream {
                             },
                             p2panda::streams::StreamEvent::AckFailed { event, error } => {
                                 callback.on_error(StreamError::AckFailed {
-                                    event: Arc::new(event.into()),
+                                    event: Arc::new((&event).into()),
                                     error: error.to_string(),
                                 });
                             },
@@ -207,7 +207,7 @@ impl ProcessedOperation {
     }
 
     pub fn processed(&self) -> Event {
-        Event(self.0.processed().clone())
+        self.0.processed().into()
     }
 }
 
@@ -249,7 +249,7 @@ impl Event {
 
 impl
     From<
-        p2panda::processor::Event<
+        &p2panda::processor::Event<
             p2panda::operation::LogId,
             p2panda::operation::Extensions,
             p2panda_core::topic::Topic,
@@ -257,13 +257,13 @@ impl
     > for Event
 {
     fn from(
-        value: p2panda::processor::Event<
+        value: &p2panda::processor::Event<
             p2panda::operation::LogId,
             p2panda::operation::Extensions,
             p2panda_core::topic::Topic,
         >,
     ) -> Self {
-        Self(value)
+        Self(value.clone())
     }
 }
 
@@ -351,8 +351,8 @@ impl From<p2panda::streams::Source> for Source {
 }
 
 #[derive(uniffi::Enum)]
-pub enum SyncEvent {
-    Started {
+pub enum StreamEvent {
+    SyncStarted {
         /// Id of the remote sending node.
         remote_node_id: Arc<PublicKey>,
 
@@ -374,7 +374,7 @@ pub enum SyncEvent {
         /// Total sessions currently running over the same topic.
         topic_sessions: u64,
     },
-    Ended {
+    SyncEnded {
         /// Id of the remote sending node.
         remote_node_id: Arc<PublicKey>,
 

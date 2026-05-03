@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::builder::NodeBuilderError;
 use crate::core::{Cursor, NetworkId, PublicKey, RelayUrl, TopicId};
 use crate::ephemeral_stream::{EphemeralMessage, EphemeralStream};
-use crate::topic_stream::{ProcessedOperation, Source, StreamError, SyncEvent, TopicStream};
+use crate::topic_stream::{ProcessedOperation, Source, StreamError, StreamEvent, TopicStream};
 
 #[derive(uniffi::Object)]
 pub struct Node(p2panda::Node);
@@ -96,7 +96,7 @@ impl From<StreamFrom> for p2panda::streams::StreamFrom {
 
 #[uniffi::export(with_foreign)]
 pub trait TopicStreamCallback: Send + Sync {
-    fn on_sync_event(&self, event: SyncEvent);
+    fn on_event(&self, event: StreamEvent);
     fn on_error(&self, error: StreamError);
     fn on_operation(&self, processed: Arc<ProcessedOperation>, source: Source);
 }

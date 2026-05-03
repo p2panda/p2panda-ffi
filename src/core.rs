@@ -439,3 +439,38 @@ impl From<&p2panda::operation::Header> for Header {
         Self(value.clone())
     }
 }
+
+#[derive(uniffi::Object)]
+pub struct Cursor(
+    p2panda_core::cursor::Cursor<p2panda_core::identity::PublicKey, p2panda::operation::LogId>,
+);
+
+impl Cursor {
+    pub(crate) fn to_inner(
+        &self,
+    ) -> p2panda_core::Cursor<p2panda_core::PublicKey, p2panda::operation::LogId> {
+        self.0.clone()
+    }
+}
+
+#[uniffi::export]
+impl Cursor {
+    pub fn name(&self) -> String {
+        self.0.name().to_string()
+    }
+}
+
+impl
+    From<
+        &p2panda_core::cursor::Cursor<p2panda_core::identity::PublicKey, p2panda::operation::LogId>,
+    > for Cursor
+{
+    fn from(
+        value: &p2panda_core::cursor::Cursor<
+            p2panda_core::identity::PublicKey,
+            p2panda::operation::LogId,
+        >,
+    ) -> Self {
+        Self(value.clone())
+    }
+}

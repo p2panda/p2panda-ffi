@@ -48,6 +48,19 @@ impl Node {
         Ok(TopicStream::new(tx, rx, callback))
     }
 
+    pub async fn stream_from(
+        &self,
+        topic: Arc<TopicId>,
+        from: StreamFrom,
+        callback: Arc<dyn TopicStreamCallback>,
+    ) -> Result<TopicStream, CreateStreamError> {
+        let (tx, rx) = self
+            .0
+            .stream_from::<Vec<u8>>(topic.to_inner(), from.into())
+            .await?;
+        Ok(TopicStream::new(tx, rx, callback))
+    }
+
     pub async fn ephemeral_stream(
         &self,
         topic: Arc<TopicId>,
@@ -61,6 +74,23 @@ impl Node {
 impl From<p2panda::Node> for Node {
     fn from(inner: p2panda::Node) -> Self {
         Self(inner)
+    }
+}
+
+#[derive(uniffi::Enum)]
+pub enum StreamFrom {
+    Start,
+    Frontier,
+    Cursor(Arc<Cursor>),
+}
+
+impl From<StreamFrom> for p2panda::streams::StreamFrom {
+    fn from(value: StreamFrom) -> Self {
+        match value {
+            StreamFrom::Start => Self::Start,
+            StreamFrom::Frontier => Self::Frontier,
+            StreamFrom::Cursor(cursor) => Self::Cursor(cursor.to_inner()),
+        }
     }
 }
 

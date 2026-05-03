@@ -1,0 +1,23 @@
+{
+  "name": "p2panda",
+  "version": "0.0.1",
+  "description": "Node.js FFI bindings for p2panda",
+  "homepage": "https://github.com/p2panda/p2panda-ffi#readme",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/p2panda/p2panda-ffi/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/p2panda/p2panda-ffi.git"
+  },
+  "license": "MIT",
+  "author": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "p2panda_ffi": "file:nodejs/p2panda_ffi"
+  }
+}

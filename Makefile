@@ -7,5 +7,9 @@ ffi-python:
 		--language python \
 		--out-dir ./python/p2panda_ffi
 
+ffi-nodejs:
+	uniffi-bindgen-node-js generate ./target/release/libp2panda_ffi.so \
+		--out-dir ./nodejs/p2panda_ffi
+
 clean:
 	rm -rf ./target

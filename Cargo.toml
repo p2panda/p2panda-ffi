@@ -14,8 +14,8 @@ path = "uniffi-bindgen.rs"
 
 [dependencies]
 futures-util = { version = "0.3.32", default-features = false }
-p2panda = { git = "https://github.com/p2panda/p2panda", rev = "533a77df6a964746db3477901faebb4fc4c54275" }
-p2panda-core = { git = "https://github.com/p2panda/p2panda", rev = "533a77df6a964746db3477901faebb4fc4c54275" }
+p2panda = { git = "https://github.com/p2panda/p2panda", rev = "de8a86c5daf3f990b548df667219486b587c259a" }
+p2panda-core = { git = "https://github.com/p2panda/p2panda", rev = "de8a86c5daf3f990b548df667219486b587c259a" }
 thiserror = "2.0.18"
 tokio = "1.52.1"
 uniffi = { version = "0.31.1", features = ["cli", "tokio"] }

@@ -30,10 +30,10 @@ pub enum MdnsDiscoveryMode {
     Active,
 }
 
-impl From<MdnsDiscoveryMode> for p2panda::node::MdnsDiscoveryMode {
+impl From<MdnsDiscoveryMode> for p2panda::network::MdnsDiscoveryMode {
     fn from(value: MdnsDiscoveryMode) -> Self {
         match value {
-            MdnsDiscoveryMode::Disabled => unimplemented!("not yet supported"),
+            MdnsDiscoveryMode::Disabled => Self::Disabled,
             MdnsDiscoveryMode::Passive => Self::Passive,
             MdnsDiscoveryMode::Active => Self::Active,
         }

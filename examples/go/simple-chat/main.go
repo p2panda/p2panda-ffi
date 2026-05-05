@@ -89,7 +89,9 @@ func main() {
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
 			if line := scanner.Text(); line != "" {
-				ephemeralStream.Publish([]byte(line))
+				if err := ephemeralStream.Publish([]byte(line)); err != nil {
+					panic(err)
+				}
 			}
 		}
 

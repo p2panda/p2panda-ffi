@@ -394,9 +394,7 @@ impl Header {
     }
 
     pub fn signature(&self) -> Arc<Signature> {
-        Arc::new(Signature(
-            self.0.signature.expect("signature always exists"),
-        ))
+        Arc::new(Signature(self.0.signature))
     }
 
     pub fn payload_size(&self) -> u32 {
